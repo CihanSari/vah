@@ -1,92 +1,122 @@
 #pragma once
+#include <variant>
 namespace csari::vah::vahinternal {
 using Num = unsigned __int64;
+using std::forward;
+using std::get;
+using std::in_place_index;
+using std::index_sequence;
+using std::is_same_v;
+using std::make_index_sequence;
+using std::variant_size_v;
+template <Num idx, class T>
+using variant_t = std::variant_alternative_t<idx, T>;
 template <Num N>
 struct num {
   static constexpr Num value = N;
 };
 template <class F, Num... Is>
-constexpr void forConstexprWithExpander(F func, std::index_sequence<Is...>) {
+constexpr void forConstexprWithExpander(F func, index_sequence<Is...>) {
   using expander = int[];
   (void)expander{0, ((void)func(num<Is>{}), 0)...};
 }
-template <Num N, typename F>
+template <Num N, class F>
 constexpr void forConstexprWithExpander(F func) {
-  forConstexprWithExpander(func, std::make_index_sequence<N>());
+  forConstexprWithExpander(func, make_index_sequence<N>());
 }
-template <typename V, Num targetIndex, Num index = 0>
-constexpr void constructVariantFromIndex(V& variantData) {
-  if constexpr (index == std::variant_size_v<V>) {
-    return;
-  }
+template <Num targetIndex, Num index, class V, class... Ts>
+constexpr auto constructVariantFromIndexConstexprRecurse(Ts&&... params) -> V {
   if constexpr (index == targetIndex) {
-    variantData = {std::in_place_index<index>};
+    return V{in_place_index<index>, forward<Ts>(params)...};
+  }
+  if constexpr (index + 1 < vahinternal::variant_size_v<V>) {
+    return constructVariantFromIndexConstexprRecurse<targetIndex, index + 1, V>(
+        forward<Ts>(params)...);
+  }
+  // Index out of bounds
+  return V{in_place_index<index>, forward<Ts>(params)...};
+}
+template <Num index, class V, class... Ts>
+auto constructVariantFromIndexRuntimeRecurse(Num const targetIndex,
+                                             Ts&&... params) -> V {
+  if (index == targetIndex) {
+    return V{in_place_index<index>, forward<Ts>(params)...};
+  }
+  if constexpr (index + 1 < variant_size_v<V>) {
+    return constructVariantFromIndexRuntimeRecurse<index + 1, V>(
+        targetIndex, forward<Ts>(params)...);
   } else {
-    constructVariantFromIndex<V, targetIndex, index + 1>(variantData);
+    return V{in_place_index<0>, forward<Ts>(params)...};
+  }
+}
+
+template <class VariantType, class T, Num index = 0>
+constexpr auto variantIndexImplementation() -> Num {
+  if constexpr (index == variant_size_v<VariantType>) {
+    return index;
+  } else if constexpr (is_same_v<variant_t<index, VariantType>, T>) {
+    return index;
+  } else {
+    return variantIndexImplementation<VariantType, T, index + 1>();
   }
 }
 }  // namespace csari::vah::vahinternal
 namespace csari::vah {
-using Num = vahinternal::Num;
-template <typename T>
-using Base = std::remove_const_t<std::remove_reference_t<T>>;
-template <typename V, class F>
-constexpr void constructAndPerformOnData(V& variantData, Num const index, F f) {
-  vahinternal::forConstexprWithExpander<std::variant_size_v<V>>(
-      [index, &variantData, &f](auto i) {
-        if (i.value == index) {
-          vahinternal::constructVariantFromIndex<V, i.value>(variantData);
-          f(std::get<i.value>(variantData));
-        }
-      });
+template <class V, class... Ts>
+auto constructVariantFromIndexRuntime(vahinternal::Num const targetIndex,
+                                      Ts&&... params) -> V {
+  return vahinternal::constructVariantFromIndexRuntimeRecurse<0, V>(
+      targetIndex, vahinternal::forward<Ts>(params)...);
 }
-template <typename V, class F>
-constexpr void constructAndPerformOnData(V const& variantData, Num const index,
-                                         F f) {
-  static_assert(false, "Variant is constant");
+template <vahinternal::Num targetIndex, class V, class... Ts>
+constexpr auto constructVariantFromIndexConstexpr(Ts&&... params) -> V {
+  return vahinternal::constructVariantFromIndexConstexprRecurse<targetIndex, 0,
+                                                                V>(
+      vahinternal::forward<Ts>(params)...);
 }
-
-template <typename V, typename T, class F>
-constexpr void constructAndPerformOnData(V& variantData, F f) {
-  variantData = T{};
-  f(std::get<T>(variantData));
+template <class V, class F, class... Ts>
+auto constructAndPerformOnData(vahinternal::Num const index, F f, Ts&&... args)
+    -> V {
+  auto v = constructVariantFromIndexRuntime<V>(
+      index, vahinternal::forward<Ts>(args)...);
+  vahinternal::forConstexprWithExpander<vahinternal::variant_size_v<V>>([&](
+      auto i) constexpr {
+    if (i.value == index) {
+      f(vahinternal::get<i.value>(v));
+    }
+  });
+  return v;
 }
-
-template <typename V, class F>
-constexpr void constructAndPerformOnData(V& variantData, F f) {
-  static_assert(false, "Variant type is unknown! Provide type index.");
-}
-
-template <typename V, class F>
-constexpr void constructAndPerformOnData(V const& variantData, F f) {
-  static_assert(false, "Variant is constant!");
-}
-
-template <typename V, class F>
-constexpr void performOnData(V& variantData, Num const index, F f) {
-  vahinternal::forConstexprWithExpander<std::variant_size_v<V>>(
+template <class V, class F>
+constexpr void performOnData(V& variantData, vahinternal::Num const index,
+                             F f) {
+  vahinternal::forConstexprWithExpander<vahinternal::variant_size_v<V>>(
       [ index, &variantData, &f ](auto i) constexpr {
         if (i.value == index) {
-          f(std::get<i.value>(variantData));
+          f(vahinternal::get<i.value>(variantData));
         }
       });
 }
-template <typename V, class F>
-constexpr void performOnData(V const& variantData, Num const index, F f) {
-  vahinternal::forConstexprWithExpander<std::variant_size_v<V>>(
+template <class V, class F>
+constexpr void performOnData(V const& variantData, vahinternal::Num const index,
+                             F f) {
+  vahinternal::forConstexprWithExpander<vahinternal::variant_size_v<V>>(
       [ index, &variantData, &f ](auto const i) constexpr {
         if (i.value == index) {
-          f(std::get<i.value>(variantData));
+          f(vahinternal::get<i.value>(variantData));
         }
       });
 }
+template <class V, class F>
+constexpr void performOnData(V& variantData, F&& f) {
+  performOnData(variantData, variantData.index(), vahinternal::forward<F>(f));
+}
+template <class V, class F>
+constexpr void performOnData(V const& variantData, F&& f) {
+  performOnData(variantData, variantData.index(), vahinternal::forward<F>(f));
+}
 
-template <typename V, class F>
-constexpr void performOnData(V& variantData, F f) {
-  performOnData(variantData, variantData.index(), std::move(f));
-}
-template <typename V, class F>
-constexpr void performOnData(V const& variantData, F f) {
-  performOnData(variantData, variantData.index(), std::move(f));
-}
+template <class VariantType, class T, vahinternal::Num index = 0>
+constexpr vahinternal::Num VariantIndex =
+    vahinternal::variantIndexImplementation<VariantType, T, index>();
 }  // namespace csari::vah

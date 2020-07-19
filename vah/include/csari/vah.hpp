@@ -1,7 +1,8 @@
 #pragma once
+#include <cstddef>
 #include <variant>
 namespace csari::vah::vahinternal {
-using Num = unsigned __int64;
+using Num = std::size_t;
 using std::forward;
 using std::get;
 using std::in_place_index;

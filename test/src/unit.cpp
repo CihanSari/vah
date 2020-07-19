@@ -1,8 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch.hpp>
 #include <csari/vah.hpp>
-#include <iostream>
-#include <variant>
+#include <sstream>
 
 struct VariantConstexprPerformer final {
   constexpr void operator()(float& val) const { val = 3.14f; }
@@ -123,4 +122,48 @@ TEST_CASE("VahVariantConstexprStructAccessAndUpdate") {
   using namespace csari::vah;
   auto constexpr res = variantConstexprStructAccessAndUpdate();
   REQUIRE(res);
+}
+
+template <class V>
+auto serializeVariantVector(std::vector<V> const& vecVar) -> std::string {
+  auto ss = std::stringstream{};
+  auto const fWriteStream = [&ss](auto const& val) {
+    ss.write(reinterpret_cast<char const*>(&val), sizeof(val));
+  };
+  fWriteStream(size(vecVar));
+  std::for_each(begin(vecVar), end(vecVar), [&fWriteStream](V const& var) {
+    fWriteStream(var.index());
+    csari::vah::performOnData(
+        var, [&fWriteStream](auto& val) { fWriteStream(val); });
+  });
+  return ss.str();
+}
+
+template <class V>
+auto loadVariantVector(std::string&& serializedData) -> std::vector<V> {
+  auto ss = std::stringstream{std::forward<std::string>(serializedData)};
+  auto const fReadStream = [&ss](auto& val) {
+    ss.read(reinterpret_cast<char*>(&val), sizeof(val));
+  };
+  auto dataVectorLoaded = std::vector<V>{};
+  auto nElements = std::size_t{};
+  fReadStream(nElements);
+  dataVectorLoaded.reserve(nElements);
+  std::generate_n(std::back_inserter(dataVectorLoaded), nElements,
+                  [&fReadStream] {
+                    auto index = std::size_t{};
+                    fReadStream(index);
+                    return csari::vah::constructAndPerformOnData<V>(
+                        index, [&fReadStream](auto& val) { fReadStream(val); });
+                  });
+  return dataVectorLoaded;
+}
+
+TEST_CASE("VahSerializationTest") {
+  using V = std::variant<std::size_t, char>;
+  auto const dataVector = std::vector<V>{std::size_t{42U}, 'a', 'b'};
+  auto const dataVectorLoaded =
+      loadVariantVector<V>(serializeVariantVector(dataVector));
+  REQUIRE(size(dataVector) == size(dataVectorLoaded));
+  REQUIRE(equal(begin(dataVector), end(dataVector), begin(dataVectorLoaded)));
 }

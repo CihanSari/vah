@@ -6,6 +6,8 @@ Single header only variant access helper. Useful for serializing or handling var
 
 # Example codes
 ## Serialization example
+This example is just provided as a showcase and shouldn't be used in production. Use your own serialization library in combination of the vah for best results.
+
 ```c++
 #include <sstream>
 #include <csari/vah.hpp>
@@ -55,27 +57,17 @@ void serializationExample() {
 ## Construction and update example
 ```cpp
 #include <csari/vah.hpp>
-void variantLambdaConstructAndUpdate() {
+void variantConstructAndUpdate(std::size_t index = 1U) {
   using namespace csari::vah;
-  using V = std::variant<int, float, char>;
-  auto var = constructAndPerformOnData<V>(
-      VariantIndex<V, char>, [](auto& val) constexpr {
+  using V = std::variant<float, int, char>;
+  // initialize index 1 (integer) with default value
+  auto var = constructVariantFromIndexRuntime<V>(index);
+  performOnData(var, [](auto& val) constexpr {
         using U = std::remove_reference_t<decltype(val)>;
-        if constexpr (std::is_same_v<U, int>) {
-          val = 98;
-        } else if constexpr (std::is_same_v<U, float>) {
-          val = 6.28f;
-        } else if constexpr (std::is_same_v<U, char>) {
-          val = 'r';
-        }
-      });
-  performOnData(
-      var, VariantIndex<V, char>, [](auto& val) constexpr {
-        using U = std::remove_reference_t<decltype(val)>;
-        if constexpr (std::is_same_v<U, int>) {
+        if constexpr (std::is_same_v<U, float>) {
           val = 48;
-        } else if constexpr (std::is_same_v<U, float>) {
-          val = 6.28f;
+        } else if constexpr (std::is_same_v<U, int>) {
+          val = 14.8f;
         } else if constexpr (std::is_same_v<U, char>) {
           val = 'k';
         }

@@ -61,6 +61,27 @@ constexpr auto variantIndexImplementation() -> Num {
     return variantIndexImplementation<VariantType, T, index + 1>();
   }
 }
+
+template <class V, class F>
+constexpr void performOnData(V& variantData, vahinternal::Num const index,
+                             F f) {
+  vahinternal::forConstexprWithExpander<vahinternal::variant_size_v<V>>(
+      [ index, &variantData, &f ](auto i) constexpr {
+        if (i.value == index) {
+          f(vahinternal::get<i.value>(variantData));
+        }
+      });
+}
+template <class V, class F>
+constexpr void performOnData(V const& variantData, vahinternal::Num const index,
+                             F f) {
+  vahinternal::forConstexprWithExpander<vahinternal::variant_size_v<V>>(
+      [ index, &variantData, &f ](auto const i) constexpr {
+        if (i.value == index) {
+          f(vahinternal::get<i.value>(variantData));
+        }
+      });
+}
 }  // namespace csari::vah::vahinternal
 namespace csari::vah {
 template <class V, class... Ts>
@@ -88,35 +109,19 @@ auto constructAndPerformOnData(vahinternal::Num const index, F f, Ts&&... args)
   });
   return v;
 }
-template <class V, class F>
-constexpr void performOnData(V& variantData, vahinternal::Num const index,
-                             F f) {
-  vahinternal::forConstexprWithExpander<vahinternal::variant_size_v<V>>(
-      [ index, &variantData, &f ](auto i) constexpr {
-        if (i.value == index) {
-          f(vahinternal::get<i.value>(variantData));
-        }
-      });
-}
-template <class V, class F>
-constexpr void performOnData(V const& variantData, vahinternal::Num const index,
-                             F f) {
-  vahinternal::forConstexprWithExpander<vahinternal::variant_size_v<V>>(
-      [ index, &variantData, &f ](auto const i) constexpr {
-        if (i.value == index) {
-          f(vahinternal::get<i.value>(variantData));
-        }
-      });
-}
+
 template <class V, class F>
 constexpr void performOnData(V& variantData, F&& f) {
-  performOnData(variantData, variantData.index(), vahinternal::forward<F>(f));
+  vahinternal::performOnData(variantData, variantData.index(),
+                             vahinternal::forward<F>(f));
 }
 template <class V, class F>
 constexpr void performOnData(V const& variantData, F&& f) {
-  performOnData(variantData, variantData.index(), vahinternal::forward<F>(f));
+  vahinternal::performOnData(variantData, variantData.index(),
+                             vahinternal::forward<F>(f));
 }
 
+// Get index from the current variant types
 template <class VariantType, class T, vahinternal::Num index = 0>
 constexpr vahinternal::Num VariantIndex =
     vahinternal::variantIndexImplementation<VariantType, T, index>();
